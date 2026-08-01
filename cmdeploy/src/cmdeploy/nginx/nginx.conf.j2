@@ -157,16 +157,11 @@ http {
 
 		{% if config.tls_cert_mode == "acme" %}
 		location /.well-known/acme-challenge/ {
-			proxy_pass http://acmetool;
+			root /var/www/html;
 		}
 		{% endif %}
 
 		return 301 https://$host$request_uri;
 	}
 
-	{% if config.tls_cert_mode == "acme" %}
-	upstream acmetool {
-		server 127.0.0.1:402;
-	}
-	{% endif %}
 }

@@ -1,0 +1,9 @@
+.git
+venv
+chatmaild/dist
+cmdeploy/dist
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+doc/build
