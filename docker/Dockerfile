@@ -25,6 +25,7 @@ RUN apt-get install -y --no-install-recommends \
     dns-root-data \
     ca-certificates curl \
     python3 python3-iniconfig python3-filelock python3-pip \
+    libsasl2-modules \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g ${VMAIL_GID} vmail \

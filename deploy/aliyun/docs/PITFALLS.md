@@ -426,7 +426,7 @@ postconf -e "smtp_sasl_security_options = noanonymous"
 docker exec chatmail postfix reload
 ```
 
-**Note**: both the `apt-get` install and the `master.cf` edit are **ephemeral** — a container rebuild reverts them (see #18). Bake `libsasl2-modules` into the Dockerfile and ship the chroot-off `master.cf` if you want this to survive.
+**Note**: this is now **baked into the repo** — `libsasl2-modules` is in the `Dockerfile` apt list, and `master.cf.j2` ships `smtp unix - - n` (chroot off). A rebuild carries both. The ephemeral `docker exec` steps above are only needed for a **running** container that predates the fix.
 
 ## 25. `smtp_generic_maps` must be `regexp:`, not `hash:`
 
