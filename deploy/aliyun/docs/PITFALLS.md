@@ -323,3 +323,150 @@ location ^~ /.well-known/mta-sts.txt {
 ```
 
 Verify: `curl -s -o /dev/null -w "%{http_code}" https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml` → 200.
+
+## 21. Container Postfix won't start: host postfix holds port 25
+
+**Symptom**: `docker logs chatmail` shows `WARNING: Postfix failed to start`; inside the container, `postfix start` reports:
+
+```
+postfix/master: fatal: bind 0.0.0.0 port 25: Address already in use
+```
+
+**Root cause**: a host-level postfix (from BT-Panel, an earlier install, or a leftover `master -w`) is still bound to port 25. The container's postfix can't grab it. `postfix check` passes (it only validates config), so this is easy to miss.
+
+**Fix**: kill the stale host master and prevent it from auto-starting:
+
+```bash
+# find what holds 25
+ss -tlnp | grep :25
+# kill it (it's the leftover host master, NOT the container's)
+kill <pid>
+systemctl disable postfix 2>/dev/null; systemctl stop postfix 2>/dev/null
+# then start the container's postfix
+docker exec chatmail postfix start
+```
+
+**Prevention**: if you keep a host postfix/sendmail, disable it before starting the container (`systemctl disable --now postfix sendmail`). The container owns 25.
+
+## 22. Outbound port 25 is hard-blocked by the cloud vendor (cannot be unblocked)
+
+**Symptom**: external mail (to Gmail/163/QQ) stays `deferred` in the queue with:
+
+```
+connect to <mx>.google.com[IP]:25: Connection timed out
+```
+
+A raw TCP test to any remote port 25 hangs/returns nothing:
+
+```bash
+timeout 8 bash -c 'cat < /dev/null > /dev/tcp/126mx01.mxmail.netease.com/25 && echo OPEN || echo BLOCKED'
+```
+
+**Root cause**: Alibaba Cloud ECS (and most mainland-China vendors) **block outbound TCP 25 at the network layer by default** to fight spam. Their support explicitly states **nobody can unblock it** — it is not a security-group rule, and there is no escalation path (not even for enterprise accounts).
+
+**Fix**: you cannot deliver external mail by direct MTA→MTA over 25. Use an SMTP relay that listens on 465/587/80 — e.g. **Aliyun DirectMail** (`smtpdm.aliyun.com`). See PITFALLS #23-#26 for the full relay setup. In-domain delivery (between two `@your-domain.com` accounts) is unaffected because it goes through local Dovecot LMTP, not port 25.
+
+## 23. DirectMail relay: 465 implicit TLS drops after handshake — use port 80 STARTTLS
+
+**Symptom**: `relayhost = [smtpdm.aliyun.com]:465` gives:
+
+```
+lost connection with smtpdm.aliyun.com[IP] while receiving the initial server greeting
+```
+
+even though `openssl s_client -connect smtpdm.aliyun.com:465` connects fine and the cert validates.
+
+**Root cause**: DirectMail's implicit-TLS on 465 is unreliable for Postfix's client (it connects, but the server closes before sending the SMTP greeting). Their docs list ports **25 / 80 / 465**; port 80 + STARTTLS is the stable path (and 25 is blocked anyway, see #22).
+
+**Fix**: use port 80 with STARTTLS, and drop the legacy `smtp_use_tls` (it conflicts with `smtp_tls_security_level`):
+
+```bash
+# in /etc/postfix/main.cf (host side, container reads it via ro mount)
+postconf -e "relayhost = [smtpdm.aliyun.com]:80"
+postconf -e "smtp_tls_security_level = encrypt"
+# make sure there is NO active smtp_use_tls line
+grep -v '^smtp_use_tls' /etc/postfix/main.cf > /tmp/mc && mv /tmp/mc /etc/postfix/main.cf
+docker exec chatmail postfix reload
+```
+
+Verify by hand that port 80 speaks SMTP before blaming Postfix:
+
+```bash
+timeout 15 bash -c 'exec 3<>/dev/tcp/smtpdm.aliyun.com/80; echo -e "EHLO test\r\nQUIT\r" >&3; cat <&3' | head
+# → 220 smtpdm.aliyun.com DirectMail Smtpd Server
+```
+
+## 24. `no mechanism available`: missing SASL plugins + Postfix chroot
+
+**Symptom**: relay AUTH fails with:
+
+```
+SASL authentication failed; cannot authenticate to server smtpdm.aliyun.com: no mechanism available
+```
+
+even with correct `sasl_passwd` and `smtp_sasl_auth_enable = yes`.
+
+**Root cause**: two things compound:
+
+1. The container image ships only `libsasldb` in `/usr/lib/*/sasl2/` — no `libplain.so` / `liblogin.so`. So the Cyrus SASL client has nothing to offer.
+2. Even after installing them, Postfix's `smtp` service runs **chrooted** (`smtp unix - - y - - smtp` in master.cf), so the plugins under `/usr/lib` are invisible inside the chroot.
+
+**Fix**: install the plugins AND disable chroot for the smtp client service:
+
+```bash
+# 1. install plugins (inside container)
+docker exec chatmail apt-get update -qq && docker exec chatmail apt-get install -y -qq libsasl2-modules
+
+# 2. disable chroot for the smtp unix service (host /etc/postfix/master.cf)
+sed -i 's|^smtp      unix  -       -       y|smtp      unix  -       -       n|' /etc/postfix/master.cf
+
+# 3. allow PLAIN (STARTTLS protects it)
+postconf -e "smtp_sasl_security_options = noanonymous"
+
+docker exec chatmail postfix reload
+```
+
+**Note**: both the `apt-get` install and the `master.cf` edit are **ephemeral** — a container rebuild reverts them (see #18). Bake `libsasl2-modules` into the Dockerfile and ship the chroot-off `master.cf` if you want this to survive.
+
+## 25. `smtp_generic_maps` must be `regexp:`, not `hash:`
+
+**Symptom**: you add a rewrite rule with a regex key, but the sender is never rewritten and the relay still rejects it:
+
+```bash
+# /etc/postfix/generic
+/^.+@your-domain\.cn$/ noreply@your-domain.cn
+```
+
+with `smtp_generic_maps = hash:/etc/postfix/generic` — `postmap -q "root@your-domain.cn"` returns nothing, and outbound mail keeps the original sender.
+
+**Root cause**: a `hash:` table does **exact-key** lookups. The regex text `/^.+@your-domain\.cn$/` is treated as a literal key, never matched. Generic maps support regexes, but the table **type must be `regexp:`** (no `postmap` needed).
+
+**Fix**:
+
+```bash
+postconf -e "smtp_generic_maps = regexp:/etc/postfix/generic"
+docker exec chatmail postfix reload
+```
+
+## 26. Relay rejects with 436 "MAIL FROM" doesn't conform with authentication
+
+**Symptom**: AUTH now succeeds, but the relay answers:
+
+```
+436 "MAIL FROM" doesn't conform with authentication [@sm060104]
+(Auth Account:noreply@your-domain.cn|Mail Account:root@your-domain.cn)
+```
+
+**Root cause**: DirectMail only accepts messages whose **envelope sender (MAIL FROM) equals the authenticated account**. Your users send as `user@your-domain.cn`, which differs from the relay account → 436.
+
+**Fix**: rewrite every outbound external sender to the relay account with a `regexp:` generic map (see #25):
+
+```bash
+# /etc/postfix/generic
+/^.+@your-domain\.cn$/ noreply@your-domain.cn
+
+postconf -e "smtp_generic_maps = regexp:/etc/postfix/generic"
+docker exec chatmail postfix reload
+```
+
+Verify a full relay send now succeeds (`status=sent (250 Data Ok...)` in the log) and that the recipient's From header shows `noreply@your-domain.cn`. In-domain mail keeps its real sender (generic maps only apply to the smtp/relay transport).

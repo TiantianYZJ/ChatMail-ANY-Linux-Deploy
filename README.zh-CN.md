@@ -190,9 +190,50 @@ curl -X POST http://127.0.0.1:10234/new
 # → {"email":"xxxx@your-domain.com","password":"..."}
 ```
 
+## 外部发信：走 SMTP 中继（国内云必需）
+
+阿里云 ECS（及多数国内云厂商）在**网络层硬封出站 TCP 25 端口**——客服明确**任何人都无法解封**（见 PITFALLS #22）。你的服务器能**收**任何地方的邮件（监听 25/465/993），但**无法直接发到外部邮箱**（Gmail/163/QQ 等），因为 MTA→MTA 投递固定走 25。
+
+同域互发（`user1@your-domain.com` → `user2@your-domain.com`）不受影响：走本地 Dovecot LMTP，不出服务器。
+
+外部发信需通过提供加密 SMTP 端口的中继转发。已验证的方案是**阿里云邮件推送（DirectMail）**：
+
+```bash
+# 在 /etc/postfix/main.cf（宿主机侧；容器通过只读挂载读取）
+postconf -e "relayhost = [smtpdm.aliyun.com]:80"
+postconf -e "smtp_tls_security_level = encrypt"
+postconf -e "smtp_sasl_auth_enable = yes"
+postconf -e "smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd"
+postconf -e "smtp_sasl_security_options = noanonymous"
+postconf -e "smtp_generic_maps = regexp:/etc/postfix/generic"
+```
+
+```bash
+# 凭据（宿主机）
+echo "smtpdm.aliyun.com noreply@your-domain.com:你的SMTP密码" > /etc/postfix/sasl_passwd
+chmod 600 /etc/postfix/sasl_passwd && postmap /etc/postfix/sasl_passwd
+
+# 把所有外部发件人改写成中继账号（DirectMail 要求 MAIL FROM == 认证账号，见 #26）
+echo "/^.+@your-domain\.com$/ noreply@your-domain.com" > /etc/postfix/generic
+docker exec chatmail postfix reload
+```
+
+三个中继专属的坑要格外注意：
+- **用 80 端口（STARTTLS），别用 465** —— DirectMail 的隐式 TLS 握手后断连（#23）
+- **`smtp_generic_maps` 必须用 `regexp:`** —— `hash:` 只做精确键匹配，正则永不命中（#25）
+- **DirectMail 拒绝「发件人 ≠ 认证账号」**，报 `436 "MAIL FROM" doesn't conform with authentication`（#26）
+
+测试真实中继发送：
+
+```bash
+docker exec chatmail sh -c 'echo "relay test $(date)" | sendmail recipient@external.com'
+docker exec chatmail sh -c 'tail -3 /var/log/mail.log | grep -E "status="'
+# → ... relay=smtpdm.aliyun.com ... status=sent
+```
+
 ## 踩坑记录
 
-实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**20 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
+实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**26 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
 
 1. CRLF 换行符破坏 `/new`（`python3\r`）
 2. `/run` tmpfs 破坏 Docker socket 共享
@@ -204,6 +245,12 @@ curl -X POST http://127.0.0.1:10234/new
 8. 阿里云 `epel-aliyuncs-release` 与 `epel-release` 冲突
 9. 国内网络无法下载自定义 Dovecot `.deb`
 10. 云安全组与宿主机 `firewalld` 双重防火墙
+11. 宿主机 postfix 占着 25 端口 → 容器 postfix 起不来（#21）
+12. 出站 25 端口被云厂商硬封，无法解封（#22）
+13. 邮件推送中继：465 握手后断 → 用 80 STARTTLS（#23）
+14. `no mechanism available`：缺 SASL 插件 + chroot（#24）
+15. `smtp_generic_maps` 必须用 `regexp:` 而非 `hash:`（#25）
+16. 中继报 436「MAIL FROM 与认证账号不符」（#26）
 
 ## 部署验证
 
@@ -265,7 +312,7 @@ tar czf /root/chatmail-backup-$(date +%F).tar.gz \
 | `deploy/aliyun/deploy.sh` | 一键部署脚本（9 步） |
 | `deploy/aliyun/genconfig.py` | 渲染服务配置模板 |
 | `deploy/aliyun/chatmail-proxy.conf` | 宿主机 Nginx 代理片段 |
-| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（19 条） |
+| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（26 条） |
 | `deploy/aliyun/docs/VERIFICATION.md` | 部署验证清单 |
 | `deploy/aliyun/README.md` | English version |
 | `deploy/aliyun/README.zh-CN.md` | 本文件 |

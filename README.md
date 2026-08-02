@@ -190,9 +190,51 @@ curl -X POST http://127.0.0.1:10234/new
 # → {"email":"xxxx@your-domain.com","password":"..."}
 ```
 
+## External delivery via SMTP relay (required on mainland-China clouds)
+
+Aliyun ECS (and most mainland-China vendors) **block outbound TCP 25 at the network layer — nobody can unblock it** (see PITFALLS #22). Your server can receive mail from anywhere (it listens on 25/465/993), but it **cannot directly send to external mailboxes** (Gmail/163/QQ…), because MTA→MTA delivery uses port 25.
+
+In-domain mail (`user1@your-domain.com` → `user2@your-domain.com`) is unaffected: it goes through local Dovecot LMTP, never leaving the box.
+
+For external delivery, relay through a provider that offers an encrypted SMTP port. The proven setup is **Aliyun DirectMail**:
+
+```bash
+# in /etc/postfix/main.cf (host side; the container reads it via a ro bind-mount)
+postconf -e "relayhost = [smtpdm.aliyun.com]:80"
+postconf -e "smtp_tls_security_level = encrypt"
+postconf -e "smtp_sasl_auth_enable = yes"
+postconf -e "smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd"
+postconf -e "smtp_sasl_security_options = noanonymous"
+postconf -e "smtp_generic_maps = regexp:/etc/postfix/generic"
+```
+
+```bash
+# credentials (host)
+echo "smtpdm.aliyun.com noreply@your-domain.com:YOUR_SMTP_PASSWORD" > /etc/postfix/sasl_passwd
+chmod 600 /etc/postfix/sasl_passwd && postmap /etc/postfix/sasl_passwd
+
+# rewrite every external sender to the relay account (DirectMail requires
+# MAIL FROM == authenticated account, see PITFALLS #26)
+echo "/^.+@your-domain\.com$/ noreply@your-domain.com" > /etc/postfix/generic
+docker exec chatmail postfix reload
+```
+
+Watch for the three relay-specific pitfalls:
+- **Use port 80 (STARTTLS), not 465** — DirectMail's implicit-TLS drops after the handshake (#23).
+- **`smtp_generic_maps` must be `regexp:`** — `hash:` does exact-key lookups and never matches the regex (#25).
+- **DirectMail rejects senders ≠ the authenticated account** with `436 "MAIL FROM" doesn't conform with authentication` (#26).
+
+Test a real relay send:
+
+```bash
+docker exec chatmail sh -c 'echo "relay test $(date)" | sendmail recipient@external.com'
+docker exec chatmail sh -c 'tail -3 /var/log/mail.log | grep -E "status="'
+# → ... relay=smtpdm.aliyun.com ... status=sent
+```
+
 ## Pitfalls
 
-Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — 20 entries, each with **Symptom → Root cause → Fix**. Highlights:
+Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — **26** entries, each with **Symptom → Root cause → Fix**. Highlights:
 
 1. CRLF shebang breaking `/new` (`python3\r`)
 2. `/run` tmpfs breaking Docker socket sharing
@@ -204,6 +246,12 @@ Every issue we hit during the field deployment is documented in [docs/PITFALLS.m
 8. Aliyun `epel-aliyuncs-release` conflicting with `epel-release`
 9. China network blocking custom Dovecot `.deb` downloads
 10. Cloud security group vs host `firewalld` (double firewall)
+11. Host postfix holding port 25 → container postfix won't start (#21)
+12. Outbound port 25 hard-blocked by the cloud vendor (#22)
+13. DirectMail relay: 465 handshake drop → use port 80 STARTTLS (#23)
+14. `no mechanism available`: missing SASL plugins + chroot (#24)
+15. `smtp_generic_maps` must be `regexp:`, not `hash:` (#25)
+16. Relay 436 "MAIL FROM" doesn't conform with authentication (#26)
 
 ## Verification
 
@@ -265,7 +313,7 @@ Any change made with `docker exec` (e.g. `sed` on `/usr/lib/cgi-bin/newemail.py`
 | `deploy/aliyun/deploy.sh` | One-shot deployment script (9 steps) |
 | `deploy/aliyun/genconfig.py` | Renders service config templates |
 | `deploy/aliyun/chatmail-proxy.conf` | Host Nginx proxy snippet |
-| `deploy/aliyun/docs/PITFALLS.md` | Field-tested issues & fixes (18) |
+| `deploy/aliyun/docs/PITFALLS.md` | Field-tested issues & fixes (26) |
 | `deploy/aliyun/docs/VERIFICATION.md` | Post-deploy verification checklist |
 | `deploy/aliyun/README.md` | This file |
 | `deploy/aliyun/README.zh-CN.md` | 简体中文版 |

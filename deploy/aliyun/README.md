@@ -253,7 +253,7 @@ Any change made with `docker exec` (e.g. `sed` on `/usr/lib/cgi-bin/newemail.py`
 | `deploy/aliyun/deploy.sh` | One-shot deployment script (9 steps) |
 | `deploy/aliyun/genconfig.py` | Renders service config templates |
 | `deploy/aliyun/chatmail-proxy.conf` | Host Nginx proxy snippet |
-| `deploy/aliyun/docs/PITFALLS.md` | Field-tested issues & fixes (18) |
+| `deploy/aliyun/docs/PITFALLS.md` | Field-tested issues & fixes (26) |
 | `deploy/aliyun/docs/VERIFICATION.md` | Post-deploy verification checklist |
 | `deploy/aliyun/README.md` | This file |
 | `deploy/aliyun/README.zh-CN.md` | 简体中文版 |

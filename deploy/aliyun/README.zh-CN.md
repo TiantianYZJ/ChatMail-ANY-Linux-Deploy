@@ -180,7 +180,7 @@ curl -X POST http://127.0.0.1:10234/new
 
 ## 踩坑记录
 
-实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**18 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
+实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**26 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
 
 1. CRLF 换行符破坏 `/new`（`python3\r`）
 2. `/run` tmpfs 破坏 Docker socket 共享
@@ -253,7 +253,7 @@ tar czf /root/chatmail-backup-$(date +%F).tar.gz \
 | `deploy/aliyun/deploy.sh` | 一键部署脚本（9 步） |
 | `deploy/aliyun/genconfig.py` | 渲染服务配置模板 |
 | `deploy/aliyun/chatmail-proxy.conf` | 宿主机 Nginx 代理片段 |
-| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（18 条） |
+| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（26 条） |
 | `deploy/aliyun/docs/VERIFICATION.md` | 部署验证清单 |
 | `deploy/aliyun/README.md` | English version |
 | `deploy/aliyun/README.zh-CN.md` | 本文件 |
