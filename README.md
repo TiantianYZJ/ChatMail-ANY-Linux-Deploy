@@ -112,11 +112,14 @@ The script performs 9 steps: system init → generate `chatmail.ini` → build D
 | A | `imap` | server public IP |
 | A | `smtp` | server public IP |
 | A | `mail` | server public IP |
+| A | `autoconfig` | server public IP |
 | MX | `@` | `your-domain.com.` (priority 10) |
 | CNAME | `www` | `your-domain.com.` |
 | CNAME | `mta-sts` | `your-domain.com.` |
 | TXT | `@` | `v=spf1 a ~all` |
 | TXT | `_dmarc` | `v=DMARC1;p=reject;adkim=s;aspf=s` |
+
+> **`autoconfig` is required for Delta Chat account creation.** When a client uses `dcaccount:your-domain.com` (or scans a QR), Delta Chat core fetches an autoconfig XML to learn the IMAP/SMTP servers — it tries `https://autoconfig.your-domain.com/config-v1.1.xml` first, then `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`. If neither resolves, account setup fails. The XML is generated into `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`; make sure your host nginx serves it directly (see [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)).
 
 ### Step 4: Open ports in firewall / security group
 
@@ -163,6 +166,15 @@ cat /root/ChatMail/deploy/aliyun/chatmail-proxy.conf
 
 Paste into your server config, then `nginx -t && nginx -s reload`.
 
+> **Before creating a Delta Chat account**, verify autoconfig works — otherwise "add transport from QR" fails:
+>
+> ```bash
+> curl -s https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml | head
+> curl -s http://autoconfig.your-domain.com/config-v1.1.xml | head
+> ```
+>
+> Both should return an XML `<clientConfig>` block. See PITFALLS #19 if not.
+
 ## Connecting with Delta Chat
 
 1. Open Delta Chat → Add account → **I have an account already** (not "create new")
@@ -180,7 +192,7 @@ curl -X POST http://127.0.0.1:10234/new
 
 ## Pitfalls
 
-Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — 18 entries, each with **Symptom → Root cause → Fix**. Highlights:
+Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — 19 entries, each with **Symptom → Root cause → Fix**. Highlights:
 
 1. CRLF shebang breaking `/new` (`python3\r`)
 2. `/run` tmpfs breaking Docker socket sharing

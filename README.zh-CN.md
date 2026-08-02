@@ -112,11 +112,14 @@ bash deploy/aliyun/deploy.sh your-domain.com --email admin@your-mail.com
 | A | `imap` | 服务器公网 IP |
 | A | `smtp` | 服务器公网 IP |
 | A | `mail` | 服务器公网 IP |
+| A | `autoconfig` | 服务器公网 IP |
 | MX | `@` | `your-domain.com.`（优先级 10） |
 | CNAME | `www` | `your-domain.com.` |
 | CNAME | `mta-sts` | `your-domain.com.` |
 | TXT | `@` | `v=spf1 a ~all` |
 | TXT | `_dmarc` | `v=DMARC1;p=reject;adkim=s;aspf=s` |
+
+> **`autoconfig` 是 Delta Chat 创建账号的必需项。** 客户端使用 `dcaccount:your-domain.com`（或扫二维码）时，Delta Chat core 会拉取 autoconfig XML 来得知 IMAP/SMTP 服务器——它优先尝试 `https://autoconfig.your-domain.com/config-v1.1.xml`，然后 `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`。两者都不可达则账号创建失败。XML 由 genconfig.py 生成到 `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`；宿主机 nginx 需直接服务它（见 [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)）。
 
 ### 第四步：放行防火墙 / 安全组端口
 
@@ -163,6 +166,15 @@ cat /root/ChatMail/deploy/aliyun/chatmail-proxy.conf
 
 粘贴到服务器配置中，然后 `nginx -t && nginx -s reload`。
 
+> **创建 Delta Chat 账号前**，先验证 autoconfig 正常——否则"通过二维码/链接添加"会失败：
+>
+> ```bash
+> curl -s https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml | head
+> curl -s http://autoconfig.your-domain.com/config-v1.1.xml | head
+> ```
+>
+> 两者都应返回 XML `<clientConfig>` 块。若不行见 PITFALLS #19。
+
 ## 用 Delta Chat 连接
 
 1. 打开 Delta Chat → 添加账号 → **已有账号**（不是创建新账号）
@@ -180,7 +192,7 @@ curl -X POST http://127.0.0.1:10234/new
 
 ## 踩坑记录
 
-实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**18 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
+实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**19 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
 
 1. CRLF 换行符破坏 `/new`（`python3\r`）
 2. `/run` tmpfs 破坏 Docker socket 共享
@@ -253,7 +265,7 @@ tar czf /root/chatmail-backup-$(date +%F).tar.gz \
 | `deploy/aliyun/deploy.sh` | 一键部署脚本（9 步） |
 | `deploy/aliyun/genconfig.py` | 渲染服务配置模板 |
 | `deploy/aliyun/chatmail-proxy.conf` | 宿主机 Nginx 代理片段 |
-| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（18 条） |
+| `deploy/aliyun/docs/PITFALLS.md` | 实战踩坑记录（19 条） |
 | `deploy/aliyun/docs/VERIFICATION.md` | 部署验证清单 |
 | `deploy/aliyun/README.md` | English version |
 | `deploy/aliyun/README.zh-CN.md` | 本文件 |
