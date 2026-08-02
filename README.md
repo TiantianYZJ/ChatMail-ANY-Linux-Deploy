@@ -119,7 +119,7 @@ The script performs 9 steps: system init → generate `chatmail.ini` → build D
 | TXT | `@` | `v=spf1 a ~all` |
 | TXT | `_dmarc` | `v=DMARC1;p=reject;adkim=s;aspf=s` |
 
-> **`autoconfig` is required for Delta Chat account creation.** When a client uses `dcaccount:your-domain.com` (or scans a QR), Delta Chat core fetches an autoconfig XML to learn the IMAP/SMTP servers — it tries `https://autoconfig.your-domain.com/config-v1.1.xml` first, then `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`. If neither resolves, account setup fails. The XML is generated into `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`; make sure your host nginx serves it directly (see [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)).
+> **`autoconfig` is required for Delta Chat account creation.** When a client uses `dcaccount:your-domain.com` (or scans a QR), Delta Chat core fetches an autoconfig XML to learn the IMAP/SMTP servers — it tries `https://autoconfig.your-domain.com/mail/config-v1.1.xml` first, then `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`. If neither resolves, account setup fails. The XML is generated into `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`; make sure your host nginx serves it directly (see [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)).
 
 ### Step 4: Open ports in firewall / security group
 
@@ -192,7 +192,7 @@ curl -X POST http://127.0.0.1:10234/new
 
 ## Pitfalls
 
-Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — 19 entries, each with **Symptom → Root cause → Fix**. Highlights:
+Every issue we hit during the field deployment is documented in [docs/PITFALLS.md](docs/PITFALLS.md) — 20 entries, each with **Symptom → Root cause → Fix**. Highlights:
 
 1. CRLF shebang breaking `/new` (`python3\r`)
 2. `/run` tmpfs breaking Docker socket sharing

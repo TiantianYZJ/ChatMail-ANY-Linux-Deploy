@@ -119,7 +119,7 @@ bash deploy/aliyun/deploy.sh your-domain.com --email admin@your-mail.com
 | TXT | `@` | `v=spf1 a ~all` |
 | TXT | `_dmarc` | `v=DMARC1;p=reject;adkim=s;aspf=s` |
 
-> **`autoconfig` 是 Delta Chat 创建账号的必需项。** 客户端使用 `dcaccount:your-domain.com`（或扫二维码）时，Delta Chat core 会拉取 autoconfig XML 来得知 IMAP/SMTP 服务器——它优先尝试 `https://autoconfig.your-domain.com/config-v1.1.xml`，然后 `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`。两者都不可达则账号创建失败。XML 由 genconfig.py 生成到 `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`；宿主机 nginx 需直接服务它（见 [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)）。
+> **`autoconfig` 是 Delta Chat 创建账号的必需项。** 客户端使用 `dcaccount:your-domain.com`（或扫二维码）时，Delta Chat core 会拉取 autoconfig XML 来得知 IMAP/SMTP 服务器——它优先尝试 `https://autoconfig.your-domain.com/mail/config-v1.1.xml`，然后 `https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml`。两者都不可达则账号创建失败。XML 由 genconfig.py 生成到 `/var/www/html/.well-known/autoconfig/mail/config-v1.1.xml`；宿主机 nginx 需直接服务它（见 [chatmail-proxy.conf](deploy/aliyun/chatmail-proxy.conf)）。
 
 ### 第四步：放行防火墙 / 安全组端口
 
@@ -192,7 +192,7 @@ curl -X POST http://127.0.0.1:10234/new
 
 ## 踩坑记录
 
-实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**19 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
+实战部署中遇到的每个问题都记录在 [docs/PITFALLS.md](docs/PITFALLS.md)——**20 条**，每条都是 **现象 → 根因 → 解决方案**。要点：
 
 1. CRLF 换行符破坏 `/new`（`python3\r`）
 2. `/run` tmpfs 破坏 Docker socket 共享

@@ -296,3 +296,30 @@ curl -s https://your-domain.com/.well-known/autoconfig/mail/config-v1.1.xml | he
 ```
 
 The XML template (`cmdeploy/src/cmdeploy/nginx/autoconfig.xml.j2`) advertises the main domain as the IMAP/SMTP host, so make sure the cert covers that host (see #7) — and keep `autoconfig.` out of the cert requirements (it does not need its own cert if you serve it over HTTP, or reuse the main-domain cert for HTTPS).
+
+## 20. Nginx regex location shadows `.well-known` prefix locations
+
+**Symptom**: the autoconfig / ACME / MTA-STS files exist under `/var/www/html/.well-known/...` and `location /.well-known/autoconfig/ { root /var/www/html; }` is present, yet requests return 404.
+
+**Root cause**: nginx **regex locations** (`location ~ ...`) take priority over **prefix locations** (`location /...`). A catch-all like:
+
+```nginx
+location ~ \.well-known {
+    allow all;
+}
+```
+
+matches `.well-known` requests first and inherits the site's default `root` (e.g. `/www/wwwroot/<domain>`), so it looks for the files in the wrong directory → 404.
+
+**Fix**: use the `^~` modifier on the prefix location to bypass regex matching (nginx: `^~` wins over regex):
+
+```nginx
+location ^~ /.well-known/autoconfig/ {
+    root /var/www/html;
+}
+location ^~ /.well-known/mta-sts.txt {
+    root /var/www/html;
+}
+```
+
+Verify: `curl -s -o /dev/null -w "%{http_code}" https://<domain>/.well-known/autoconfig/mail/config-v1.1.xml` → 200.
